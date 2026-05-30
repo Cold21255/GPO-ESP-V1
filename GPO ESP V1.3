@@ -9,6 +9,7 @@ local cfg = {
     rare      = true,
     uncommon  = true,
     common    = true,
+    vending   = true,
     maxDist   = 15000,
 }
 
@@ -18,6 +19,14 @@ local chestColors = {
     ["Rare Chest"]      = Color3.fromRGB(255, 215,   0),
     ["Legendary Chest"] = Color3.fromRGB(255, 170,   0),
     ["Mythical Chest"]  = Color3.fromRGB(200, 100, 255),
+}
+local VENDING_COLOR = Color3.fromRGB(60, 220, 180)
+
+-- Sound name inside Center → display label
+-- Add more here as you discover them from output
+local VENDING_SOUND_MAP = {
+    ["Geppo"]           = "Geppo",
+    ["VendingMachineE"] = "Fighting Style",
 }
 
 local function reload()
@@ -40,13 +49,9 @@ local function reload()
     local tabSettings = window:createtab("Settings")
 
     window:createlabel(tabMain, "Main", 1)
-
     window:createtoggle(tabMain, {
-        Name           = "Chest ESP",
-        Col            = 1,
-        Default        = cfg.enabled,
-        HasKeybind     = true,
-        DefaultKeybind = "None",
+        Name = "Chest ESP", Col = 1, Default = cfg.enabled,
+        HasKeybind = true, DefaultKeybind = "None",
         Callback = function(state) cfg.enabled = state end
     })
 
@@ -54,51 +59,36 @@ local function reload()
     window:createlabel(tabMain, "Chest", 1)
 
     window:createtoggle(tabMain, {
-        Name     = "Mythical",
-        Col      = 1,
-        Half     = "Left",
-        SameRow  = true,
-        Default  = cfg.mythical,
+        Name = "Mythical", Col = 1, Half = "Left", SameRow = true,
+        Default = cfg.mythical,
         Callback = function(state) cfg.mythical = state end
     })
-
     window:createtoggle(tabMain, {
-        Name     = "Legendary",
-        Col      = 1,
-        Half     = "Right",
-        SameRow  = false,
-        Default  = cfg.legendary,
+        Name = "Legendary", Col = 1, Half = "Right", SameRow = false,
+        Default = cfg.legendary,
         Callback = function(state) cfg.legendary = state end
     })
-
     window:createtoggle(tabMain, {
-        Name         = "Rare",
-        Col          = 1,
-        CustomWidth  = 0.33,
-        CustomOffset = 0,
-        SameRow      = true,
-        Default      = cfg.rare,
-        Callback     = function(state) cfg.rare = state end
+        Name = "Rare", Col = 1, CustomWidth = 0.33, CustomOffset = 0, SameRow = true,
+        Default = cfg.rare,
+        Callback = function(state) cfg.rare = state end
+    })
+    window:createtoggle(tabMain, {
+        Name = "Uncommon", Col = 1, CustomWidth = 0.33, CustomOffset = 0.33, SameRow = true,
+        Default = cfg.uncommon,
+        Callback = function(state) cfg.uncommon = state end
+    })
+    window:createtoggle(tabMain, {
+        Name = "Common", Col = 1, CustomWidth = 0.33, CustomOffset = 0.66, SameRow = false,
+        Default = cfg.common,
+        Callback = function(state) cfg.common = state end
     })
 
+    window:createseparator(tabMain, 1)
+    window:createlabel(tabMain, "Vending Machines", 1)
     window:createtoggle(tabMain, {
-        Name         = "Uncommon",
-        Col          = 1,
-        CustomWidth  = 0.33,
-        CustomOffset = 0.33,
-        SameRow      = true,
-        Default      = cfg.uncommon,
-        Callback     = function(state) cfg.uncommon = state end
-    })
-
-    window:createtoggle(tabMain, {
-        Name         = "Common",
-        Col          = 1,
-        CustomWidth  = 0.33,
-        CustomOffset = 0.66,
-        SameRow      = false,
-        Default      = cfg.common,
-        Callback     = function(state) cfg.common = state end
+        Name = "Vending ESP", Col = 1, Default = cfg.vending,
+        Callback = function(state) cfg.vending = state end
     })
 
     window:settaborder({"Main", "Settings"})
@@ -107,7 +97,7 @@ end
 reload()
 
 -- ============================================================
--- CHEST ESP
+-- HELPERS
 -- ============================================================
 local lp = game:GetService("Players").LocalPlayer
 
@@ -122,12 +112,9 @@ local function getDist(a, b)
     return math.sqrt(dx*dx + dy*dy + dz*dz)
 end
 
--- Weld name detection — confirmed working (found 64 chests in previous session)
--- Common    → weld "chestyes_brown" or "chestyes_grey"
--- Uncommon  → weld "blueche"
--- Rare      → weld "chestyes_gold" (without brown present)
--- Legendary → weld contains "legendarychest"
--- Mythical  → weld contains "mythicalchest"
+-- ============================================================
+-- CHEST DETECTION
+-- ============================================================
 local function getChestType(model)
     local hasBrown = false
     local hasGold  = false
@@ -146,29 +133,24 @@ local function getChestType(model)
         end
     end
 
-    if hasMyth              then return "Mythical Chest"  end
-    if hasLeg               then return "Legendary Chest" end
-    if hasBlue              then return "Uncommon Chest"  end
-    if hasGold and not hasBrown then return "Rare Chest"  end
-    if hasBrown             then return "Common Chest"    end
+    if hasMyth                  then return "Mythical Chest"  end
+    if hasLeg                   then return "Legendary Chest" end
+    if hasBlue                  then return "Uncommon Chest"  end
+    if hasGold and not hasBrown then return "Rare Chest"      end
+    if hasBrown                 then return "Common Chest"    end
     return nil
 end
 
--- A model is a chest if it has a ProximityPrompt AND a known chest weld
 local function isChest(model)
     if model.ClassName ~= "Model" then return false end
     local hasPrompt = false
     local hasWeld   = false
     for _, c in pairs(model:GetDescendants()) do
-        if c.ClassName == "ProximityPrompt" then
-            hasPrompt = true
-        end
+        if c.ClassName == "ProximityPrompt" then hasPrompt = true end
         if c.ClassName == "Weld" then
             local n = c.Name:lower()
-            if  string.find(n, "chestyes")
-             or string.find(n, "blueche")
-             or string.find(n, "legendarychest")
-             or string.find(n, "mythicalchest") then
+            if string.find(n, "chestyes") or string.find(n, "blueche")
+            or string.find(n, "legendarychest") or string.find(n, "mythicalchest") then
                 hasWeld = true
             end
         end
@@ -177,45 +159,103 @@ local function isChest(model)
     return false
 end
 
-local function getChestPos(model)
+local function getAnyPos(model)
+    local ok1, pp = pcall(function() return model.PrimaryPart end)
+    if ok1 and pp then
+        local ok2, pos = pcall(function() return (pp :: any).Position end)
+        if ok2 and pos then return toV3(pos) end
+    end
     for _, c in pairs(model:GetDescendants()) do
         if c.ClassName == "MeshPart" or c.ClassName == "Part" then
             local ok, pos = pcall(function() return (c :: any).Position end)
             if ok and pos then return toV3(pos) end
         end
     end
+    -- Last resort: model pivot (works even if no parts are loaded)
+    local ok3, cf = pcall(function() return model:GetPivot() end)
+    if ok3 and cf then
+        local p = cf.Position
+        return Vector3.new(p.X, p.Y, p.Z)
+    end
     return nil
 end
 
-local espLabels   = {}
+local chestLabels = {}
 local knownChests = {}
 
 local function addChest(model)
     if knownChests[model] then return end
     if not isChest(model) then return end
     local ctype = getChestType(model)
-    local pos   = getChestPos(model)
+    local pos   = getAnyPos(model)
     if not ctype or not pos then return end
     knownChests[model] = true
     local label = Drawing.new("Text")
-    label.Size    = 13
-    label.Center  = true
-    label.Outline = true
-    label.Visible = false
-    table.insert(espLabels, {drawing = label, model = model, ctype = ctype, pos = pos})
-    print("[ESP] Found: " .. ctype)
+    label.Size = 13 label.Center = true label.Outline = true label.Visible = false
+    table.insert(chestLabels, {drawing = label, model = model, ctype = ctype, pos = pos})
 end
 
--- Initial scan
 local effects = workspace:FindFirstChild("Effects")
 if effects then
-    for _, m in pairs(effects:GetChildren()) do
-        addChest(m)
-    end
+    for _, m in pairs(effects:GetChildren()) do addChest(m) end
 end
-print("[ESP] Scan complete - " .. #espLabels .. " chests")
 
--- Main loop
+-- ============================================================
+-- VENDING MACHINE DETECTION
+-- ============================================================
+
+-- Sounds are NOT geometry so they are never streamed out.
+-- Center is a direct child of VendingMachine and its Sound children
+-- tell us exactly what type the machine is — readable from any distance.
+local function getVendingLabel(model)
+    local center = model:FindFirstChild("Center")
+    if center then
+        for _, c in pairs(center:GetChildren()) do
+            local mapped = VENDING_SOUND_MAP[c.Name]
+            if mapped then
+                return mapped
+            end
+        end
+    end
+
+    
+    return "Vending Machine"
+end
+
+-- Position: prefer Center part since it's always loaded (non-geometry children aren't streamed)
+local function getVendingPos(model)
+    local center = model:FindFirstChild("Center")
+    if center then
+        local ok, pos = pcall(function() return (center :: any).Position end)
+        if ok and pos then return toV3(pos) end
+    end
+    return getAnyPos(model)
+end
+
+local vendingLabels = {}
+local knownVending  = {}
+
+local function addVending(model)
+    if knownVending[model] then return end
+    if model.ClassName ~= "Model" then return end
+    if model.Name ~= "VendingMachine" then return end
+    local pos   = getVendingPos(model)
+    local label = getVendingLabel(model)
+    if not pos then return end
+    knownVending[model] = true
+    local drawing = Drawing.new("Text")
+    drawing.Size = 13 drawing.Center = true drawing.Outline = true drawing.Visible = false
+    table.insert(vendingLabels, {drawing = drawing, model = model, label = label, pos = pos})
+end
+
+local env = workspace:FindFirstChild("Env")
+if env then
+    for _, c in pairs(env:GetDescendants()) do addVending(c) end
+end
+
+-- ============================================================
+-- MAIN LOOP
+-- ============================================================
 task.spawn(function()
     local rescanTimer = 0
 
@@ -234,30 +274,26 @@ task.spawn(function()
         end
 
         rescanTimer = rescanTimer + 0.1
-        if rescanTimer >= 3 then
+        if rescanTimer >= 10 then
             rescanTimer = 0
             local efx = workspace:FindFirstChild("Effects")
             if efx then
                 for _, m in pairs(efx:GetChildren()) do addChest(m) end
             end
+            local ev = workspace:FindFirstChild("Env")
+            if ev then
+                for _, c in pairs(ev:GetDescendants()) do addVending(c) end
+            end
         end
 
-        for _, entry in pairs(espLabels) do
+        -- Chest ESP
+        for _, entry in pairs(chestLabels) do
             local label = entry.drawing
             local model = entry.model
-            local ctype = entry.ctype
-            local pos   = entry.pos
+            if not model or not model.Parent then label.Visible = false continue end
+            if not cfg.enabled then label.Visible = false continue end
 
-            if not model or not model.Parent then
-                label.Visible = false
-                continue
-            end
-
-            if not cfg.enabled then
-                label.Visible = false
-                continue
-            end
-
+            local ctype   = entry.ctype
             local enabled = false
             if     ctype == "Common Chest"    and cfg.common    then enabled = true
             elseif ctype == "Uncommon Chest"  and cfg.uncommon  then enabled = true
@@ -266,26 +302,51 @@ task.spawn(function()
             elseif ctype == "Mythical Chest"  and cfg.mythical  then enabled = true
             end
 
-            if not enabled then
-                label.Visible = false
-                continue
-            end
+            if not enabled then label.Visible = false continue end
 
-            local dist = hrpPos and getDist(hrpPos, pos) or 0
-            if dist > cfg.maxDist then
-                label.Visible = false
-                continue
-            end
+            local dist = hrpPos and getDist(hrpPos, entry.pos) or 0
+            if dist > cfg.maxDist then label.Visible = false continue end
 
-            local sp, onScreen = cam:WorldToScreenPoint(Vector3.new(pos.X, pos.Y, pos.Z))
-            if not onScreen then
-                label.Visible = false
-                continue
-            end
+            local sp, onScreen = cam:WorldToScreenPoint(Vector3.new(entry.pos.X, entry.pos.Y, entry.pos.Z))
+            if not onScreen then label.Visible = false continue end
 
             label.Text     = ctype .. "  " .. math.floor(dist) .. "m"
             label.Position = Vector2.new(sp.X, sp.Y)
             label.Color    = chestColors[ctype] or Color3.fromRGB(255, 255, 255)
+            label.Visible  = true
+        end
+
+        -- Vending ESP
+        for _, entry in pairs(vendingLabels) do
+            local label = entry.drawing
+            local model = entry.model
+            if not model or not model.Parent then label.Visible = false continue end
+            if not cfg.vending then label.Visible = false continue end
+
+            -- If still unidentified, keep retrying (Center might not have been ready at scan time)
+            if entry.label == "Vending Machine" then
+                local center = model:FindFirstChild("Center")
+                if center then
+                    for _, c in pairs(center:GetChildren()) do
+                        local mapped = VENDING_SOUND_MAP[c.Name]
+                        if mapped then
+                            entry.label = mapped
+                          
+                            break
+                        end
+                    end
+                end
+            end
+
+            local dist = hrpPos and getDist(hrpPos, entry.pos) or 0
+            if dist > cfg.maxDist then label.Visible = false continue end
+
+            local sp, onScreen = cam:WorldToScreenPoint(Vector3.new(entry.pos.X, entry.pos.Y, entry.pos.Z))
+            if not onScreen then label.Visible = false continue end
+
+            label.Text     = entry.label .. "  " .. math.floor(dist) .. "m"
+            label.Position = Vector2.new(sp.X, sp.Y)
+            label.Color    = VENDING_COLOR
             label.Visible  = true
         end
     end
