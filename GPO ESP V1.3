@@ -1,0 +1,292 @@
+local severeui = loadstring(game:HttpGet(
+    "https://raw.githubusercontent.com/okdude42/ui-lib/refs/heads/main/SevereLib.lua?t=" .. tostring(tick())
+))()
+
+local cfg = {
+    enabled   = true,
+    mythical  = true,
+    legendary = true,
+    rare      = true,
+    uncommon  = true,
+    common    = true,
+    maxDist   = 15000,
+}
+
+local chestColors = {
+    ["Common Chest"]    = Color3.fromRGB(210, 160,  80),
+    ["Uncommon Chest"]  = Color3.fromRGB(100, 180, 255),
+    ["Rare Chest"]      = Color3.fromRGB(255, 215,   0),
+    ["Legendary Chest"] = Color3.fromRGB(255, 170,   0),
+    ["Mythical Chest"]  = Color3.fromRGB(200, 100, 255),
+}
+
+local function reload()
+    local window = severeui:createwindow({
+        Title           = "Ui made by ok0f",
+        Version         = "v1.1",
+        Keybind         = "RightShift",
+        ConfigFolder    = "Grand Piece Online",
+        DefaultTab      = "Main",
+        TabAlignment    = "Center",
+        DefaultColor    = Color3.fromRGB(28, 27, 31),
+        DefaultAccent   = Color3.fromRGB(208, 188, 255),
+        DefaultSnowfall = true,
+        DefaultScale    = 1.0,
+        DefaultFont     = 5,
+        ReloadCallback  = function() reload() end
+    })
+
+    local tabMain     = window:createtab("Main")
+    local tabSettings = window:createtab("Settings")
+
+    window:createlabel(tabMain, "Main", 1)
+
+    window:createtoggle(tabMain, {
+        Name           = "Chest ESP",
+        Col            = 1,
+        Default        = cfg.enabled,
+        HasKeybind     = true,
+        DefaultKeybind = "None",
+        Callback = function(state) cfg.enabled = state end
+    })
+
+    window:createseparator(tabMain, 1)
+    window:createlabel(tabMain, "Chest", 1)
+
+    window:createtoggle(tabMain, {
+        Name     = "Mythical",
+        Col      = 1,
+        Half     = "Left",
+        SameRow  = true,
+        Default  = cfg.mythical,
+        Callback = function(state) cfg.mythical = state end
+    })
+
+    window:createtoggle(tabMain, {
+        Name     = "Legendary",
+        Col      = 1,
+        Half     = "Right",
+        SameRow  = false,
+        Default  = cfg.legendary,
+        Callback = function(state) cfg.legendary = state end
+    })
+
+    window:createtoggle(tabMain, {
+        Name         = "Rare",
+        Col          = 1,
+        CustomWidth  = 0.33,
+        CustomOffset = 0,
+        SameRow      = true,
+        Default      = cfg.rare,
+        Callback     = function(state) cfg.rare = state end
+    })
+
+    window:createtoggle(tabMain, {
+        Name         = "Uncommon",
+        Col          = 1,
+        CustomWidth  = 0.33,
+        CustomOffset = 0.33,
+        SameRow      = true,
+        Default      = cfg.uncommon,
+        Callback     = function(state) cfg.uncommon = state end
+    })
+
+    window:createtoggle(tabMain, {
+        Name         = "Common",
+        Col          = 1,
+        CustomWidth  = 0.33,
+        CustomOffset = 0.66,
+        SameRow      = false,
+        Default      = cfg.common,
+        Callback     = function(state) cfg.common = state end
+    })
+
+    window:settaborder({"Main", "Settings"})
+end
+
+reload()
+
+-- ============================================================
+-- CHEST ESP
+-- ============================================================
+local lp = game:GetService("Players").LocalPlayer
+
+local function toV3(p)
+    return Vector3.new(p.X, p.Y, p.Z)
+end
+
+local function getDist(a, b)
+    local dx = a.X - b.X
+    local dy = a.Y - b.Y
+    local dz = a.Z - b.Z
+    return math.sqrt(dx*dx + dy*dy + dz*dz)
+end
+
+-- Weld name detection — confirmed working (found 64 chests in previous session)
+-- Common    → weld "chestyes_brown" or "chestyes_grey"
+-- Uncommon  → weld "blueche"
+-- Rare      → weld "chestyes_gold" (without brown present)
+-- Legendary → weld contains "legendarychest"
+-- Mythical  → weld contains "mythicalchest"
+local function getChestType(model)
+    local hasBrown = false
+    local hasGold  = false
+    local hasBlue  = false
+    local hasLeg   = false
+    local hasMyth  = false
+
+    for _, c in pairs(model:GetDescendants()) do
+        if c.ClassName == "Weld" then
+            local n = c.Name:lower()
+            if string.find(n, "mythicalchest")  then hasMyth = true end
+            if string.find(n, "legendarychest") then hasLeg  = true end
+            if string.find(n, "blueche")        then hasBlue = true end
+            if string.find(n, "chestyes_gold")  then hasGold = true end
+            if string.find(n, "chestyes_brown") or string.find(n, "chestyes_grey") then hasBrown = true end
+        end
+    end
+
+    if hasMyth              then return "Mythical Chest"  end
+    if hasLeg               then return "Legendary Chest" end
+    if hasBlue              then return "Uncommon Chest"  end
+    if hasGold and not hasBrown then return "Rare Chest"  end
+    if hasBrown             then return "Common Chest"    end
+    return nil
+end
+
+-- A model is a chest if it has a ProximityPrompt AND a known chest weld
+local function isChest(model)
+    if model.ClassName ~= "Model" then return false end
+    local hasPrompt = false
+    local hasWeld   = false
+    for _, c in pairs(model:GetDescendants()) do
+        if c.ClassName == "ProximityPrompt" then
+            hasPrompt = true
+        end
+        if c.ClassName == "Weld" then
+            local n = c.Name:lower()
+            if  string.find(n, "chestyes")
+             or string.find(n, "blueche")
+             or string.find(n, "legendarychest")
+             or string.find(n, "mythicalchest") then
+                hasWeld = true
+            end
+        end
+        if hasPrompt and hasWeld then return true end
+    end
+    return false
+end
+
+local function getChestPos(model)
+    for _, c in pairs(model:GetDescendants()) do
+        if c.ClassName == "MeshPart" or c.ClassName == "Part" then
+            local ok, pos = pcall(function() return (c :: any).Position end)
+            if ok and pos then return toV3(pos) end
+        end
+    end
+    return nil
+end
+
+local espLabels   = {}
+local knownChests = {}
+
+local function addChest(model)
+    if knownChests[model] then return end
+    if not isChest(model) then return end
+    local ctype = getChestType(model)
+    local pos   = getChestPos(model)
+    if not ctype or not pos then return end
+    knownChests[model] = true
+    local label = Drawing.new("Text")
+    label.Size    = 13
+    label.Center  = true
+    label.Outline = true
+    label.Visible = false
+    table.insert(espLabels, {drawing = label, model = model, ctype = ctype, pos = pos})
+    print("[ESP] Found: " .. ctype)
+end
+
+-- Initial scan
+local effects = workspace:FindFirstChild("Effects")
+if effects then
+    for _, m in pairs(effects:GetChildren()) do
+        addChest(m)
+    end
+end
+print("[ESP] Scan complete - " .. #espLabels .. " chests")
+
+-- Main loop
+task.spawn(function()
+    local rescanTimer = 0
+
+    while true do
+        task.wait(0.1)
+
+        local cam = workspace.CurrentCamera
+        if not cam then continue end
+
+        local char   = lp.Character
+        local hrp    = char and char:FindFirstChild("HumanoidRootPart")
+        local hrpPos = nil
+        if hrp then
+            local ok, raw = pcall(function() return (hrp :: any).Position end)
+            if ok and raw then hrpPos = toV3(raw) end
+        end
+
+        rescanTimer = rescanTimer + 0.1
+        if rescanTimer >= 3 then
+            rescanTimer = 0
+            local efx = workspace:FindFirstChild("Effects")
+            if efx then
+                for _, m in pairs(efx:GetChildren()) do addChest(m) end
+            end
+        end
+
+        for _, entry in pairs(espLabels) do
+            local label = entry.drawing
+            local model = entry.model
+            local ctype = entry.ctype
+            local pos   = entry.pos
+
+            if not model or not model.Parent then
+                label.Visible = false
+                continue
+            end
+
+            if not cfg.enabled then
+                label.Visible = false
+                continue
+            end
+
+            local enabled = false
+            if     ctype == "Common Chest"    and cfg.common    then enabled = true
+            elseif ctype == "Uncommon Chest"  and cfg.uncommon  then enabled = true
+            elseif ctype == "Rare Chest"      and cfg.rare      then enabled = true
+            elseif ctype == "Legendary Chest" and cfg.legendary then enabled = true
+            elseif ctype == "Mythical Chest"  and cfg.mythical  then enabled = true
+            end
+
+            if not enabled then
+                label.Visible = false
+                continue
+            end
+
+            local dist = hrpPos and getDist(hrpPos, pos) or 0
+            if dist > cfg.maxDist then
+                label.Visible = false
+                continue
+            end
+
+            local sp, onScreen = cam:WorldToScreenPoint(Vector3.new(pos.X, pos.Y, pos.Z))
+            if not onScreen then
+                label.Visible = false
+                continue
+            end
+
+            label.Text     = ctype .. "  " .. math.floor(dist) .. "m"
+            label.Position = Vector2.new(sp.X, sp.Y)
+            label.Color    = chestColors[ctype] or Color3.fromRGB(255, 255, 255)
+            label.Visible  = true
+        end
+    end
+end)
