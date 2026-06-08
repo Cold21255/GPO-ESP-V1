@@ -22,8 +22,6 @@ local chestColors = {
 }
 local VENDING_COLOR = Color3.fromRGB(60, 220, 180)
 
--- Sound name inside Center → display label
--- Add more here as you discover them from output
 local VENDING_SOUND_MAP = {
     ["Geppo"]           = "Geppo",
     ["VendingMachineE"] = "Fighting Style",
@@ -171,7 +169,6 @@ local function getAnyPos(model)
             if ok and pos then return toV3(pos) end
         end
     end
-    -- Last resort: model pivot (works even if no parts are loaded)
     local ok3, cf = pcall(function() return model:GetPivot() end)
     if ok3 and cf then
         local p = cf.Position
@@ -195,6 +192,7 @@ local function addChest(model)
     table.insert(chestLabels, {drawing = label, model = model, ctype = ctype, pos = pos})
 end
 
+-- Initial scan
 local effects = workspace:FindFirstChild("Effects")
 if effects then
     for _, m in pairs(effects:GetChildren()) do addChest(m) end
@@ -203,26 +201,17 @@ end
 -- ============================================================
 -- VENDING MACHINE DETECTION
 -- ============================================================
-
--- Sounds are NOT geometry so they are never streamed out.
--- Center is a direct child of VendingMachine and its Sound children
--- tell us exactly what type the machine is — readable from any distance.
 local function getVendingLabel(model)
     local center = model:FindFirstChild("Center")
     if center then
         for _, c in pairs(center:GetChildren()) do
             local mapped = VENDING_SOUND_MAP[c.Name]
-            if mapped then
-                return mapped
-            end
+            if mapped then return mapped end
         end
     end
-
-    
     return "Vending Machine"
 end
 
--- Position: prefer Center part since it's always loaded (non-geometry children aren't streamed)
 local function getVendingPos(model)
     local center = model:FindFirstChild("Center")
     if center then
@@ -239,15 +228,16 @@ local function addVending(model)
     if knownVending[model] then return end
     if model.ClassName ~= "Model" then return end
     if model.Name ~= "VendingMachine" then return end
-    local pos   = getVendingPos(model)
-    local label = getVendingLabel(model)
+    local pos = getVendingPos(model)
     if not pos then return end
     knownVending[model] = true
+    local lbl     = getVendingLabel(model)
     local drawing = Drawing.new("Text")
     drawing.Size = 13 drawing.Center = true drawing.Outline = true drawing.Visible = false
-    table.insert(vendingLabels, {drawing = drawing, model = model, label = label, pos = pos})
+    table.insert(vendingLabels, {drawing = drawing, model = model, label = lbl, pos = pos})
 end
 
+-- Initial scan
 local env = workspace:FindFirstChild("Env")
 if env then
     for _, c in pairs(env:GetDescendants()) do addVending(c) end
@@ -257,8 +247,6 @@ end
 -- MAIN LOOP
 -- ============================================================
 task.spawn(function()
-    local rescanTimer = 0
-
     while true do
         task.wait(0.1)
 
@@ -273,17 +261,14 @@ task.spawn(function()
             if ok and raw then hrpPos = toV3(raw) end
         end
 
-        rescanTimer = rescanTimer + 0.1
-        if rescanTimer >= 10 then
-            rescanTimer = 0
-            local efx = workspace:FindFirstChild("Effects")
-            if efx then
-                for _, m in pairs(efx:GetChildren()) do addChest(m) end
-            end
-            local ev = workspace:FindFirstChild("Env")
-            if ev then
-                for _, c in pairs(ev:GetDescendants()) do addVending(c) end
-            end
+        -- Rescan every tick — as fast as possible
+        local efx = workspace:FindFirstChild("Effects")
+        if efx then
+            for _, m in pairs(efx:GetChildren()) do addChest(m) end
+        end
+        local ev = workspace:FindFirstChild("Env")
+        if ev then
+            for _, c in pairs(ev:GetDescendants()) do addVending(c) end
         end
 
         -- Chest ESP
@@ -323,17 +308,12 @@ task.spawn(function()
             if not model or not model.Parent then label.Visible = false continue end
             if not cfg.vending then label.Visible = false continue end
 
-            -- If still unidentified, keep retrying (Center might not have been ready at scan time)
             if entry.label == "Vending Machine" then
                 local center = model:FindFirstChild("Center")
                 if center then
                     for _, c in pairs(center:GetChildren()) do
                         local mapped = VENDING_SOUND_MAP[c.Name]
-                        if mapped then
-                            entry.label = mapped
-                          
-                            break
-                        end
+                        if mapped then entry.label = mapped break end
                     end
                 end
             end
